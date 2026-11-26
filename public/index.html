@@ -1,0 +1,61 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RATx Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--c:#fff;--t:#1c2330;--m:#6b7587;--b:#e3e6ec;--ac:#2f5bea;--r:#d93c3c;--y:#c98200;--g:#1f9d63}
+@media(prefers-color-scheme:dark){:root{--bg:#12151b;--c:#1b1f27;--t:#e8ebf1;--m:#8d97a8;--b:#2a303b;--ac:#6b8cff;--r:#ff6b6b;--y:#f0b440;--g:#4cc38a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:12px 20px;background:var(--c);border-bottom:1px solid var(--b);flex-wrap:wrap}
+h1{font-size:16px;margin:0 12px 0 0}h2{font-size:14px;margin:22px 0 8px}main{padding:0 20px 40px;max-width:1300px;margin:auto}
+button{font:inherit;padding:6px 12px;border:1px solid var(--b);background:var(--c);color:var(--t);border-radius:6px;cursor:pointer}
+button.on{background:var(--ac);color:#fff;border-color:var(--ac)}.m{color:var(--m)}.r{color:var(--r)}.y{color:var(--y)}.g{color:var(--g)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.card{background:var(--c);border:1px solid var(--b);border-radius:8px;padding:12px}.card b{font-size:26px;display:block}
+.card.k{cursor:pointer}.card.sel{outline:2px solid var(--ac)}
+table{width:100%;border-collapse:collapse;background:var(--c);border:1px solid var(--b);border-radius:8px;overflow:hidden}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--b);vertical-align:top}th{color:var(--m);font-weight:500;font-size:12px}
+tr.c{cursor:pointer}tr.c:hover{background:var(--bg)}.w{overflow-x:auto}.warn{background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;margin-top:12px}
+</style>
+<header><h1>RATx</h1><button id="b1" onclick="tab='sup';render()">Suporte</button><button id="b2" onclick="tab='dev';render()">Desenvolvimento</button>
+<span style="flex:1"></span><span class="m" id="ts"></span><button onclick="sync()" id="bs">Sincronizar</button></header>
+<main id="app"><p class="m">Carregando…</p></main>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const enc=s=>encodeURIComponent(s);let key=sessionStorage.k,D,tab='sup',F={};
+async function load(){const r=await fetch('/api/data',{headers:{'x-dash-key':key||''}});if(r.status===401){key=prompt('Senha do painel')||'';sessionStorage.k=key;return load()}D=await r.json();render()}
+async function sync(){const b=$('#bs');b.disabled=true;b.textContent='Sincronizando…';try{await fetch('/api/sync',{headers:{'x-dash-key':key}})}finally{b.disabled=false;b.textContent='Sincronizar';load()}}
+const $=s=>document.querySelector(s),days=d=>(Date.now()-new Date(d))/864e5,fmt=d=>d?new Date(d).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'–';
+const age=t=>days(t.ultimoEm||t.aberto);
+const wk=o=>{const n=new Date();n.setHours(0,0,0,0);n.setDate(n.getDate()-((n.getDay()+6)%7)+7*o);return[n,new Date(+n+7*864e5)]};
+const mes=()=>{const n=new Date();return[new Date(n.getFullYear(),n.getMonth(),1),new Date(n.getFullYear(),n.getMonth()+1,1)]};
+const inR=(t,[a,b])=>{const d=new Date(t.aberto);return d>=a&&d<b};
+const per=()=>[['Sem. anterior',wk(-1)],['Sem. atual',wk(0)],['Mês atual',mes()]].map(([n,r])=>[n,D.tickets.filter(t=>inR(t,r))]);
+const cnt=(a,f)=>a.reduce((m,x)=>{const k=f(x);m[k]=(m[k]||0)+1;return m},{});
+const setF=(k,v)=>{F[k]=F[k]===v?null:v;render()};
+function render(){if(!D)return;$('#b1').className=tab=='sup'?'on':'';$('#b2').className=tab=='dev'?'on':'';
+ const m=D.meta;$('#ts').textContent=m.syncedAt?'Atualizado '+fmt(m.syncedAt):'Nunca sincronizado';
+ $('#app').innerHTML=(m.semHistorico?`<div class="warn">${m.semHistorico} ticket(s) ainda sem histórico (limite da API). Clique em Sincronizar novamente: a análise de conteúdo fica completa conforme o histórico é carregado.</div>`:'')+(tab=='sup'?sup():dev())}
+function sup(){const open=D.tickets.filter(t=>!t.fechado),venc=open.filter(t=>t.slaOk===false),stale=open.filter(t=>age(t)>2);
+ const st=Object.entries(cnt(open,t=>t.status||'(sem status)')).sort((a,b)=>b[1]-a[1]);
+ const ops={};open.forEach(t=>{const o=t.operador||'(sem operador)',x=ops[o]??={a:0,v:0,old:0};x.a++;if(t.slaOk===false)x.v++;x.old=Math.max(x.old,age(t))});
+ const rows=open.filter(t=>(!F.s||t.status===F.s)&&(!F.o||t.operador===F.o)&&(!F.v||t.slaOk===false)).sort((a,b)=>age(b)-age(a));
+ return`<h2>Visão geral (tickets abertos carregados)</h2><div class="grid">
+ <div class="card"><b>${open.length}</b>em aberto</div><div class="card k ${F.v?'sel':''}" onclick="setF('v',true)"><b class="r">${venc.length}</b>SLA vencido</div>
+ <div class="card"><b class="y">${stale.length}</b>sem movimento &gt; 2 dias</div><div class="card"><b class="g">${D.tickets.length-open.length}</b>concluídos</div></div>
+ <h2>Abertos por status</h2><div class="grid">${st.map(([s,n])=>`<div class="card k ${F.s===s?'sel':''}" onclick="setF('s',decodeURIComponent('${enc(s)}'))"><b>${n}</b>${esc(s)}</div>`).join('')}</div>
+ <h2>Por operador</h2><div class="w"><table><tr><th>Operador</th><th>Abertos</th><th>SLA vencido</th><th>Mais parado (dias)</th></tr>
+ ${Object.entries(ops).sort((a,b)=>b[1].v-a[1].v||b[1].a-a[1].a).map(([o,x])=>`<tr class="c" onclick="setF('o',decodeURIComponent('${enc(o)}'))"><td>${F.o===o?'▶ ':''}${esc(o)}</td><td>${x.a}</td><td class="${x.v?'r':''}">${x.v}</td><td>${x.old.toFixed(1)}</td></tr>`).join('')}</table></div>
+ <h2>Tickets (${rows.length}) <span class="m">· mais parados primeiro · clique nos cards/operadores para filtrar</span></h2>${tbl(rows)}`}
+const tbl=r=>`<div class="w"><table><tr><th>#</th><th>Cliente</th><th>Assunto</th><th>Operador</th><th>Status</th><th>Prior.</th><th>SLA</th><th>Parado</th></tr>${r.slice(0,200).map(t=>`<tr><td>${t.protocolo||t.id}</td><td>${esc(t.cliente)}</td><td>${esc((t.titulo||t.problema||'').slice(0,90))}</td><td>${esc(t.operador||'–')}</td><td>${esc(t.status)}</td><td>${esc(t.prioridade||'')}</td><td class="${t.slaOk===false?'r':'g'}">${t.slaOk===false?'vencido':t.slaOk?'ok':'–'}</td><td>${age(t).toFixed(1)}d</td></tr>`).join('')}</table></div>`;
+const STOP=new Set('para com uma que dos das nao por mais como foi ser esta esse essa quando ao os as de da do em no na um se ou ja tem sem pelo pela seu sua cliente sistema erro empresa cnpj dispositivo desktop versao descricao problema identificar acessar chatmobi mensagem automatica abertura realizada conforme atendimento canal comunicacao whatsapp relatado revenda tags ainda ocorre sendo feito fazer'.split(' '));
+const KF={tag:t=>t.tags?.length?t.tags:['(sem TAG)'],cli:t=>[t.cliente||'?'],
+ term:t=>{const w=((t.titulo||'')+' '+(t.problema||'')).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(x=>x.length>3&&!STOP.has(x)&&!/^\d+$/.test(x));const s=new Set();w.slice(1).forEach((x,i)=>s.add(w[i]+' '+x));return[...s]}};
+function cmp(title,id,min,lim=20){const kf=KF[id],P=per(),C=P.map(([,a])=>{const m={};a.forEach(t=>new Set(kf(t)).forEach(k=>m[k]=(m[k]||0)+1));return m});
+ const mx=k=>Math.max(...C.map(c=>c[k]||0)),keys=[...new Set(C.flatMap(Object.keys))].filter(k=>mx(k)>=min).sort((a,b)=>mx(b)-mx(a)||(C[2][b]||0)-(C[2][a]||0)).slice(0,lim);
+ return`<h2>${title}</h2><div class="w"><table><tr><th></th>${P.map(([n])=>`<th>${n}</th>`).join('')}<th>Δ semana</th></tr>${keys.map(k=>{const d=(C[1][k]||0)-(C[0][k]||0);return`<tr class="c" onclick="F.k=['${id}',decodeURIComponent('${enc(k)}')];render()"><td>${esc(k)}</td>${C.map(c=>`<td>${c[k]||0}</td>`).join('')}<td class="${d>0?'r':d<0?'g':'m'}">${d>0?'+':''}${d}</td></tr>`}).join('')||'<tr><td colspan=5 class="m">Sem recorrências</td></tr>'}</table></div>`}
+function dev(){const P=per(),sel=F.k&&D.tickets.filter(t=>KF[F.k[0]](t).includes(F.k[1])).sort((a,b)=>new Date(b.aberto)-new Date(a.aberto));
+ return`<h2>Volume</h2><div class="w"><table><tr><th></th>${P.map(([n])=>`<th>${n}</th>`).join('')}</tr>
+ <tr><td>Abertos</td>${P.map(([,a])=>`<td>${a.length}</td>`).join('')}</tr><tr><td>Concluídos</td>${P.map(([,a])=>`<td>${a.filter(t=>t.fechado).length}</td>`).join('')}</tr>
+ <tr><td>SLA vencido</td>${P.map(([,a])=>`<td>${a.filter(t=>t.slaOk===false).length}</td>`).join('')}</tr></table></div>`
+ +cmp('Assuntos recorrentes (pares de palavras no texto dos RATs, ≥2 tickets)','term',2,25)+cmp('TAGs','tag',1,12)+cmp('Clientes reincidentes (≥2 RATs)','cli',2,15)
+ +(sel?`<h2>Tickets: ${esc(F.k[1])} (${sel.length}) <button onclick="F.k=null;render()">limpar</button></h2>`+tbl(sel):'')}
+load();
+</script></html>
